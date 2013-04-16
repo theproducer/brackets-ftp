@@ -1,0 +1,55 @@
+<div id="bftp-project-dialog" class="bftp-settings template modal hide">
+    <div class="modal-header">
+        <h1 class="dialog-title">Remote Project Settings</h1>
+    </div>
+    <div class="modal-body">   
+        <div class="field-group">
+            <div class="field-container">
+                <label>Server:</label>
+                <input type="text" id="bftp-server" placeholder="ftp.domain.com" class="url" />
+                <input type="number" id="bftp-serverport" value="21" placeholder="21" class="url" />
+                <div style="clear:both;"></div>
+            </div>
+            <div class="field-container">
+                <label>Protocol Type:</label>
+                <select id="bftp-protocol" >
+                    <option value="ftp">FTP</option>
+                    <option value="sftp">SFTP</option>
+                </select>
+                <div style="clear:both;"></div>
+            </div>
+            <div class="field-container">
+                <label>Username:</label>
+                <input type="text" id="bftp-username" placeholder="ftp username" class="url" />
+                <div style="clear:both;"></div>
+            </div>
+            <div class="field-container">
+                <label>Password:</label>
+                <input type="password" id="bftp-password" placeholder="ftp password" class="url" />                
+                <div style="clear:both;"></div>
+            </div>
+        </div>      
+        
+        <div class="field-container">
+            <label>Remote Path:</label>
+            <input type="text" id="bftp-remoteroot" placeholder="type in the remote path to the project root folder" class="url" />
+            <div style="clear:both;"></div>
+        </div>  
+        <div class="field-container">
+            <label>Local Path:</label>
+            <input type="text" id="bftp-remoteroot"  placeholder="will use project root path" class="url" disabled/>
+            <div style="clear:both;"></div>
+        </div>
+        
+        <div class="field-container">
+            <label>Upload file on save</label>
+            <input type="checkbox" id="bftp-uploadonsave" />
+            <div class="clear:both;"></div>
+        </div>
+        
+    </div>
+    <div class="modal-footer">
+        <a href="#" class="dialog-button btn primary" data-button-id="save">Save Settings</a>
+        <a href="#" class="dialog-button btn" data-button-id="cancel">Cancel</a>
+    </div>
+</div>
