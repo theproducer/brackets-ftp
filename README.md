@@ -19,4 +19,8 @@ As time allows (or if others would like to assist with development), I plan on a
 *  Queued file uploads - instead of uploading a changed file immediately on save, save a list of changed files and offer to upload them all at once on command
 *  Binary file support
 *  FTP directory browsing and file download support
-*  Better error feedback
+*  Better error feedback      
+
+License
+=======
+MIT-licensed -- see main.js for details.
