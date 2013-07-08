@@ -27,34 +27,50 @@
 define(function (require, exports, module) {
     "use strict";
     
-    var dialogHtml = require("text!htmlContent/bracketsftp-dialogs.html");
-    var toolbarHtml = require("text!htmlContent/bracketsftp-toolbar.html");
     var nodeConnection;
     
     var CommandManager = brackets.getModule("command/CommandManager"),
         Menus = brackets.getModule("command/Menus"),
         Commands = brackets.getModule("command/Commands"),
         Dialogs = brackets.getModule("widgets/Dialogs"),
+        StatusBar = brackets.getModule("widgets/StatusBar"),
+        PanelManager = brackets.getModule("view/PanelManager"),
+        Resizer = brackets.getModule("utils/Resizer"),
         NodeConnection = brackets.getModule("utils/NodeConnection"),
         ExtensionUtils = brackets.getModule("utils/ExtensionUtils"),
         AppInit = brackets.getModule("utils/AppInit"),
         DocumentManager = brackets.getModule("document/DocumentManager"),
         ProjectManager = brackets.getModule("project/ProjectManager"),
         FileSystem = brackets.getModule("file/NativeFileSystem").NativeFileSystem,
-        FileUtils = brackets.getModule("file/FileUtils");
+        FileUtils = brackets.getModule("file/FileUtils"),
+        Strings = brackets.getModule("strings"),
+        BracketsFTPToolbar = require("text!htmlContent/bracketsftp-toolbar.html"),
+        BracketsFTPTemplate = require("text!htmlContent/bottom-panel.html"),
+        BracketsFTPDialogs = require("text!htmlContent/bracketsftp-dialogs.html"),
+        FileBrowserTemplate = require("text!htmlContent/file-browser.html");
+        
     
-    var projectFtpDetails = {};
-    projectFtpDetails.server = "";
-    projectFtpDetails.protocol = "";
-    projectFtpDetails.port = 21;
-    projectFtpDetails.username = "";
-    projectFtpDetails.password = "";
-    projectFtpDetails.localpath = "";
-    projectFtpDetails.remotepath = "";
-    projectFtpDetails.uploadOnSave = "";
+    var projectFtpDetails = {
+        server: "",
+        protocol: "",
+        port: 21,
+        username: "",
+        password: "",
+        localpath: "",
+        remotepath: "",
+        uploadOnSave: false
+    };
     
+    var currentRemoteDirectory;
     
-    //Functions
+    var INDICATOR_ID = "bracketftp-status",
+        defaultPrefs = {
+            enabled: true,
+            collapsed: false
+        };
+    
+    var $fileBrowserResults;
+        
     function chain() {
         var functions = Array.prototype.slice.call(arguments, 0);
         if (functions.length > 0) {
@@ -74,12 +90,27 @@ define(function (require, exports, module) {
             projectFtpDetails.localpath = ProjectManager.getProjectRoot().fullPath;
         }
         
+        if(projectFtpDetails.protocol === "sftp"){
+            toggleRemoteBrowserAvailability(false);    
+        }else{
+            toggleRemoteBrowserAvailability(true);    
+        }
+        
         var fileEntry = new FileSystem.FileEntry(destinationDir + ".remotesettings");
         var projectsData = JSON.stringify(projectFtpDetails);
         FileUtils.writeText(fileEntry, projectsData).done(function () {
-            console.log("file written");
+            
         });
-        
+    }
+    
+    function toggleRemoteBrowserAvailability(enable) {
+        if(enable){
+            $("#bracketftp-status").text("browse remote directory");
+            $("#bracketftp-status").attr("data-enabled", true);
+        }else{
+            $("#bracketftp-status").text("no remote server set");
+            $("#bracketftp-status").attr("data-enabled", false);
+        }
     }
     
     function readRemoteSettings() {
@@ -89,9 +120,15 @@ define(function (require, exports, module) {
             var readSettingsPromise = FileUtils.readAsText(fileEntry);
         
             readSettingsPromise.done(function (result) {
-                //remotesettings file does exist, read in JSON into object
+                //remotesettings file does exist, read in JSON into object                
                 if (result) {
+                    toggleRemoteBrowserAvailability(true);
                     projectFtpDetails = $.parseJSON(result);
+                    if(projectFtpDetails.protocol === "sftp"){
+                        toggleRemoteBrowserAvailability(false);    
+                    }else{
+                        toggleRemoteBrowserAvailability(true);    
+                    }                        
                 }
             });
             readSettingsPromise.fail(function (err) {
@@ -104,14 +141,18 @@ define(function (require, exports, module) {
                 projectFtpDetails.localpath = "";
                 projectFtpDetails.remotepath = "";
                 projectFtpDetails.uploadOnSave = false;
+                
+                toggleRemoteBrowserAvailability(false);
             });
         }
     }
     
     function showSettingsDialog() {
-        if ($("#bftp-project-dialog").length === 0) {
-            $("body").append(dialogHtml);
-        }
+        Dialogs.showModalDialogUsingTemplate(BracketsFTPDialogs, true).done(function (id) {
+            if (id === "save") {
+                saveRemoteSettings();
+            }
+        });
         
         $("#bftp-server").val(projectFtpDetails.server);
         $("#bftp-serverport").val(projectFtpDetails.port);
@@ -125,21 +166,146 @@ define(function (require, exports, module) {
         } else {
             $("#bftp-uploadonsave").attr("checked", false);
         }
-        
-        Dialogs.showModalDialog("bftp-settings").done(function (id) {
-            if (id === "save") {
-                saveRemoteSettings();
-            }
-        });
     }
     
+    function changeDirectory(newPath) {
+        console.log("[brackets-ftp] Changing directory...");    
+        $("#bracketsftp-filebrowser .table-container").toggleClass("loading");
+        $("#bracketsftp-filebrowser .table-container table").fadeOut(100);
+        if (newPath === undefined || newPath === "") {
+            currentRemoteDirectory = projectFtpDetails.remotepath;                 
+        } else {
+            if (newPath === "..") {
+                var pathArray = currentRemoteDirectory.split("/");                
+                pathArray.pop();                
+                currentRemoteDirectory = "";
+                $.each(pathArray, function (index, value) {
+                    if (value !== "") {
+                        currentRemoteDirectory = currentRemoteDirectory + "/" + value;
+                    }
+                });                
+            } else {
+                currentRemoteDirectory = currentRemoteDirectory + "/" + newPath;    
+            }
+        }        
+        
+        if(currentRemoteDirectory === "") {
+            currentRemoteDirectory = "/";   
+        }
+        
+        if (projectFtpDetails.protocol === "sftp") {
+            //var ftpPromise = nodeConnection.domains.bracketsftp.getDirectorySFTP(currentRemoteDirectory, projectFtpDetails);
+        } else {
+            var ftpPromise = nodeConnection.domains.bracketsftp.getDirectory(currentRemoteDirectory, projectFtpDetails);
+        }
+    }
+    
+    function uploadFile(fileToUpload) {
+        console.log("[brackets-ftp] Uploading file...");
+        $("#toolbar-bracketsftp").toggleClass("working");
+        
+        var docPath = fileToUpload.fullPath;
+        var docName = fileToUpload.name;
+        var pathArray = ProjectManager.makeProjectRelativeIfPossible(docPath).split("/");
+        
+        var i = 0;
+        var pathArrayString = projectFtpDetails.remotepath;
+        
+        for (i; i < (pathArray.length - 1); i++) {
+            pathArrayString = pathArrayString + "/" + pathArray[i];
+        }
+        
+        pathArrayString = pathArrayString + "/" + docName;
+        
+        if (projectFtpDetails.protocol === "sftp") {
+            var sftpPromise = nodeConnection.domains.bracketsftp.uploadFileSFTP(docPath, docName, projectFtpDetails, pathArray);
+            sftpPromise.fail(function (err) {
+                console.error("[brackets-ftp] Secure file upload failed for: " + docName, err);
+                $("#toolbar-bracketsftp").toggleClass("working");
+                $("#toolbar-bracketsftp").toggleClass("error");
+                $("#toolbar-bracketsftp").delay(2000).toggleClass("error");
+            });
+        } else {
+            var ftpPromise = nodeConnection.domains.bracketsftp.uploadFile(docPath, docName, projectFtpDetails, pathArray);
+            ftpPromise.fail(function (err) {
+                console.error("[brackets-ftp] File upload failed for: " + docName, err);
+                $("#toolbar-bracketsftp").toggleClass("working");
+                $("#toolbar-bracketsftp").toggleClass("error");
+                $("#toolbar-bracketsftp").delay(2000).toggleClass("error");
+            });
+        }
+    }
+    
+    function uploadContextFile() {
+        var fileEntry = ProjectManager.getSelectedItem();
+        if (fileEntry.isDirectory) {
+            alert("Cannot upload whole directories");
+        } else {
+            uploadFile(fileEntry);
+        }
+    }
+    
+    function toggleFTPFileBrowser() {
+        if ($("#bracketsftp-filebrowser").is(":visible")) {
+            Resizer.hide($fileBrowserResults);
+        } else {
+            changeDirectory("");
+            Resizer.show($fileBrowserResults);
+        }
+    }
+    
+    AppInit.htmlReady(function () {
+        ExtensionUtils.loadStyleSheet(module, "styles/bracketsftp-styles.css");
+        
+        //********************************
+        //****** Set Up UI Elements ******
+        //********************************
+        
+        var ftpBottomPanelHtml = Mustache.render(BracketsFTPTemplate, Strings);
+        var ftpFileBrowser = PanelManager.createBottomPanel("bracketsftp.filebrowser", $(ftpBottomPanelHtml), 200);
+        $fileBrowserResults = $("#bracketsftp-filebrowser");
+        
+        var ftpStatusHtml = "<div data-enabled=\"true\" id=\"bracketsftp-status\" title=\"browse remote directory\">browse remote directory</div>";
+        $(ftpStatusHtml).insertBefore("#status-language");
+        StatusBar.addIndicator(INDICATOR_ID, $("#bracketsftp-status"), true);
+        
+        $("#main-toolbar .buttons").append(BracketsFTPToolbar);
+        
+        var BFTP_UPLOADCONTEXTFILE_ID = "bracketsftp.uploadcontextfile";
+        CommandManager.register("Upload File", BFTP_UPLOADCONTEXTFILE_ID, uploadContextFile);
+        
+        var project_contextMenu = Menus.getContextMenu(Menus.ContextMenuIds.PROJECT_MENU);
+        project_contextMenu.addMenuDivider();
+        project_contextMenu.addMenuItem(BFTP_UPLOADCONTEXTFILE_ID, null, Menus.LAST);
+        
+        $("#toolbar-bracketsftp").on('click', function () {
+            showSettingsDialog();
+        });      
+        
+        $("#bracketsftp-filebrowser .close").click(function () {
+            toggleFTPFileBrowser();
+        });
+        
+        $("#bracketftp-status").click(function () {
+            if($(this).attr('data-enabled')){
+                toggleFTPFileBrowser();
+            }
+        });
+        
+         $("body").on('dblclick', ".bracketsftp-folder", function () {            
+             changeDirectory($(this).attr("data-path"));
+        });
+        
+    });
+    
     AppInit.appReady(function () {
+        console.log("Brackets FTP Loaded");
         nodeConnection = new NodeConnection();
         
         function connectNode() {
             var connectionPromise = nodeConnection.connect(true);
             connectionPromise.fail(function (err) {
-                console.error("[brackets-ftp] failed to connect to node", err);
+                
             });
             return connectionPromise;
         }
@@ -148,15 +314,73 @@ define(function (require, exports, module) {
             var path = ExtensionUtils.getModulePath(module, "node/ftpDomain");
             var loadPromise = nodeConnection.loadDomains([path], true);
             loadPromise.fail(function (err) {
-                console.log("failed to load ftpDomain", err);
+                    
             });
-            
             return loadPromise;
         }
         
         chain(connectNode, loadNodeFtp);
         
-        ExtensionUtils.loadStyleSheet(module, "styles/bracketsftp-styles.css");
+        $(nodeConnection).on("bracketsftp.getDirectorySFTP", function (event, result) {
+            console.log(result);
+        });
+        
+        $(nodeConnection).on("bracketsftp.getDirectory", function (event, result) {
+            var files = JSON.parse(result);
+            var sanitizedFolders = new Array();
+            var sanitizedFiles = new Array();
+            
+            //Get all files
+            $.each(files, function (index, value) {
+                if (value !== null) {
+                    if (value.type === 0) {
+                        var fileObject = {
+                            name: value.name,
+                            lastupdated: new Date(value.time),
+                            size: value.size,
+                            type: "file"
+                        };
+                        
+                        sanitizedFiles.push(fileObject);
+                    }
+                }
+            });
+            
+            var upFolder = {
+                name: "..",
+                lastupdated: "--",
+                size: "--",
+                type: "folder"
+            };
+            
+            sanitizedFolders.push(upFolder);
+            
+            //Get all folders
+            $.each(files, function (index, value) {
+                if (value !== null) {
+                    if (value.type === 1) {                        
+                        var fileObject = {
+                            name: value.name,
+                            lastupdated: new Date(value.time),
+                            size: "--",
+                            type: "folder"
+                        };
+                        
+                        sanitizedFolders.push(fileObject);
+                    }
+                }
+            });
+            var html = Mustache.render(FileBrowserTemplate, {ftpFileList: sanitizedFolders.concat(sanitizedFiles)});
+            $fileBrowserResults.find(".table-container")
+                .empty()
+                .append(html)
+                .scrollTop(0)
+                .hide()
+                .fadeIn(50);
+            $("#bracketsftp-filebrowser .currentDirectory").text(currentRemoteDirectory);
+            $("#bracketsftp-filebrowser .table-container").toggleClass("loading");
+            
+        });
         
         $("body").on('change', "#bftp-server", function () {
             projectFtpDetails.server = $(this).val();
@@ -222,58 +446,16 @@ define(function (require, exports, module) {
                     window.clearTimeout(toolbarResetTimeout);
                 }, 2000);
             }
-            
-            console.log(param);
-            
-        });
-                
-        $("#main-toolbar .buttons").append(toolbarHtml);
-            
-        $("#toolbar-bracketsftp").on('click', function () {
-            showSettingsDialog();
         });
         
-        console.log("app ready");
     });
     
-    $(DocumentManager).on("documentSaved", function (event, doc) {
+    $(DocumentManager).on("documentSaved", function (event, doc) {        
         if (projectFtpDetails.uploadOnSave === true) {
             if (projectFtpDetails.server !== "") {
                 var document = DocumentManager.getCurrentDocument();
                 if (ProjectManager.isWithinProject(document.file.fullPath)) {
-                    console.log("[brackets-ftp] Uploading file...");
-                    $("#toolbar-bracketsftp").toggleClass("working");
-                    
-                    var docPath = document.file.fullPath;
-                    var docName = document.file.name;
-                    var pathArray = ProjectManager.makeProjectRelativeIfPossible(docPath).split("/");
-                    
-                    var i = 0;
-                    var pathArrayString = projectFtpDetails.remotepath;
-                    
-                    for (i; i < (pathArray.length - 1); i++) {
-                        pathArrayString = pathArrayString + "/" + pathArray[i];
-                    }
-                    
-                    pathArrayString = pathArrayString + "/" + docName;
-                    
-                    if (projectFtpDetails.protocol === "sftp") {
-                        var sftpPromise = nodeConnection.domains.bracketsftp.uploadFileSFTP(docPath, docName, projectFtpDetails, pathArray);
-                        sftpPromise.fail(function (err) {
-                            console.error("[brackets-ftp] Secure file upload failed for: " + docName, err);
-                            $("#toolbar-bracketsftp").toggleClass("working");
-                            $("#toolbar-bracketsftp").toggleClass("error");
-                            $("#toolbar-bracketsftp").delay(2000).toggleClass("error");
-                        });
-                    } else {
-                        var ftpPromise = nodeConnection.domains.bracketsftp.uploadFile(docPath, docName, projectFtpDetails, pathArray);
-                        ftpPromise.fail(function (err) {
-                            console.error("[brackets-ftp] File upload failed for: " + docName, err);
-                            $("#toolbar-bracketsftp").toggleClass("working");
-                            $("#toolbar-bracketsftp").toggleClass("error");
-                            $("#toolbar-bracketsftp").delay(2000).toggleClass("error");
-                        });
-                    }
+                    uploadFile(document.file);
                 }
             } else {
                 console.log("[brackets-ftp] No server defined, will not upload");
@@ -285,11 +467,11 @@ define(function (require, exports, module) {
         readRemoteSettings();
     });
     
-    
-    var BFTP_SETTINGSDIALOG_ID = "bftp.settingsdialog";
-    CommandManager.register("Remote Project Settings...", BFTP_SETTINGSDIALOG_ID, showSettingsDialog);
+    var BFTP_SETTINGSDIALOG_ID = "bracketsftp.settingsdialog";
+    CommandManager.register("FTP Settings...", BFTP_SETTINGSDIALOG_ID, showSettingsDialog);
     
     var menu = Menus.getMenu(Menus.AppMenuBar.FILE_MENU);
     menu.addMenuItem(BFTP_SETTINGSDIALOG_ID);
+    
     
 });

@@ -12,6 +12,53 @@ maxerr: 50, node: true */
     
     var _domainManager;
     
+    
+    function cmdGetDirectory(filepath, ftpdetails) {
+        var client = new FTPClient({
+            host: ftpdetails.server,
+            user: ftpdetails.username,
+            pass: ftpdetails.password,
+            port: ftpdetails.port
+        });
+        
+        client.auth(ftpdetails.username, ftpdetails.password, function (err, res) {
+            if (err) {
+                console.error(err);
+                _domainManager.emitEvent("bracketsftp", "uploadResult", "autherror");
+            } else {
+                client.ls(filepath, function (err, files) {
+                    var arrayString = JSON.stringify(files);
+                    _domainManager.emitEvent("bracketsftp", "getDirectory", [arrayString]);
+                });
+            }
+        });
+        
+        
+    }
+    
+    function cmdGetDirectorySFTP(filepath, ftpdetails) {        
+        var SFTPClient = require("node-sftp");
+        var client = new SFTPClient({
+            host: ftpdetails.server,
+            username: ftpdetails.username,
+            password: ftpdetails.password,
+            port: ftpdetails.port            
+        }, function (err) {            
+            if(err){
+                
+            } else {
+                client.readdir("/home/dearlcco", function(err, files) {
+                    if(err){
+                        client.disconnect();
+                        return callback(err, null)
+                    }
+                    var arrayString = JSON.stringify({filesarray: files});
+                    _domainManager.emitEvent("bracketsftp", "getDirectorySFTP", [arrayString]);    
+                });
+            }
+        });        
+    }
+    
     function cmdUploadFileSFTP(filepath, filename, ftpdetails, patharray) {
         var SFTPClient = require("node-sftp");
         var client = new SFTPClient({
@@ -121,6 +168,20 @@ maxerr: 50, node: true */
         
         DomainManager.registerCommand(
             "bracketsftp",
+            "getDirectory",
+            cmdGetDirectory,
+            false
+        );
+        
+        DomainManager.registerCommand(
+            "bracketsftp",
+            "getDirectorySFTP",
+            cmdGetDirectorySFTP,
+            false
+        );
+        
+        DomainManager.registerCommand(
+            "bracketsftp",
             "uploadFileSFTP",
             cmdUploadFileSFTP,
             false
@@ -130,6 +191,40 @@ maxerr: 50, node: true */
             "bracketsftp",
             "uploadResult",
             "result"
+        );
+        
+        DomainManager.registerEvent(
+            "bracketsftp",
+            "getDirectorySFTP",
+            [
+        		{
+        			name: "path",
+        			type: "string",
+        			description: "path for returned files"
+        		},
+        		{
+        			name: "files",
+        			type: "string",
+        			description: "files in path"
+        		}        			
+        	]
+        );
+        
+        DomainManager.registerEvent(
+        	"bracketsftp",
+        	"getDirectory",
+        	[
+        		{
+        			name: "path",
+        			type: "string",
+        			description: "path for returned files"
+        		},
+        		{
+        			name: "files",
+        			type: "string",
+        			description: "files in path"
+        		}        			
+        	]
         );
     }
     

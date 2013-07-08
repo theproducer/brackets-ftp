@@ -1,0 +1,12 @@
+<table class="zebra-striped row-highlight condensed-table">
+    <tbody>
+        {{#ftpFileList}}
+        <tr>
+            <td class="bracketsftp-{{type}}" data-path="{{name}}" width="50%">{{name}}</td>
+            <td>{{type}}</td>
+            <td>{{size}}</td>
+            <td>{{lastupdated}}</td>
+        </tr>
+        {{/ftpFileList}}
+    </tbody>
+</table>
