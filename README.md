@@ -6,6 +6,8 @@ FTP and SFTP integration for Adobe Brackets
 Brackets FTP is an extension that brings extremely basic FTP/SFTP upload support to Adobe Brackets.
 FTP support is provided by Brackets' Node.JS support via JSFTP (https://github.com/sergi/jsftp) and node-sftp (https://github.com/ajaxorg/node-sftp).
 
+!! This extension has only been tested on OS X !!
+
 Current Features
 ================
 Brackets FTP currently only supports uploading changed files from the Brackets project working directory into a remote directory that is specified in settings, similar to Panic Coda and MacRabbit Espresso 2.  
