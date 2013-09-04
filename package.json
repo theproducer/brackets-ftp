@@ -1,0 +1,13 @@
+{
+	"name": "brackets-ftp",
+	"title": "Brackets FTP",
+	"version": "1.0",
+	"description": "Adds FTP functionality to the Brackets Editor",
+	"author": "theproducer (https://github.com/theproducer)",
+	"license": "MIT",
+	"categories":"external",
+	"keywords": [
+		"ftp",
+		"editing"
+	],
+}
